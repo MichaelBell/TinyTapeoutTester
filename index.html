@@ -8,7 +8,7 @@ body {
   background-color: #000;
   display: flex;
   justify-content: center;
-  height: 100vh;
+  height: 90vh;
   font-family: sans-serif;
 }
 
@@ -86,7 +86,7 @@ label {
             <input type="number" id="design_num" name="design_num" min="0" max="250" value="{{design_num}}"></div><br>
             <div class="pad"><label for="byte_in">Byte to send: </label>
             <input type="text" id="byte_in" name="byte_in" value="{{byte_in}}"></div><br>
-            <div class="pad"><label for="clock" style="width: 120px;">Clock: </label><input style="width: 40px;" type="checkbox" name="clock"><input type="submit" class="submit" value="Send"></div><br>
+            <div class="pad"><label for="clock" style="width: 120px;">Clock: </label><input style="width: 40px;" type="checkbox" name="clock" {{clock}}><input type="submit" class="submit" value="Send"></div><br>
             <div class="pad"><label>Byte out: </label>
             <div class="out"> {{byte_out}}</div></div>
         </form>

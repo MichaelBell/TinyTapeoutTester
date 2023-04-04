@@ -26,5 +26,6 @@ class TT:
 
     def send_receive_byte(self, byte_in, design_num):
         self.tt.send_byte_blocking(byte_in)
-        self.tt.send_zeroes_blocking(design_num, latch=True)
+        self.tt.send_zeroes_blocking(design_num - 1)
+        self.tt.send_byte_blocking(0, latch=True)
         return self.tt.send_zeroes_blocking(chain_len - design_num, scan=True)
