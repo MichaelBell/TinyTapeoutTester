@@ -1,4 +1,4 @@
-from phew import server, connect_to_wifi
+from phew import server, logging, connect_to_wifi
 from phew import render_template
 
 import secrets
@@ -10,7 +10,7 @@ from tt import TT
 tt = TT()
 
 ip = connect_to_wifi(secrets.wlan_ssid, secrets.wlan_password)
-print(ip)
+logging.info(f"Connected, IP: {ip}")
 
 @server.route("/", methods=["GET"])
 def index(request):
@@ -22,10 +22,9 @@ def send_byte(request):
     design_num = int(request.query.get("design_num", 2))
     clock = request.query.get("clock", "off") == "on"
 
-    print(byte_in, design_num)
     if re.search(r"[^01]", byte_in):
+        logging.warn(f"Input byte must only contain 0s and 1s, it was \"{byte_in}\" replacing with 0")
         byte_in = "00000000"
-    print(byte_in, design_num)
 
     b = 0
     byte_in = "00000000" + byte_in
@@ -39,16 +38,18 @@ def send_byte(request):
         if byte_in[0] == "1":
             b += 1
         byte_in = byte_in[1:]
-    print(b, design_num)
 
     if clock:
         b &= 0xFE
-        tt.send_receive_byte(b, design_num)
+        logging.info(f"Sending byte {b:08b} to design {design_num}")
+        byte_out = tt.send_receive_byte(b, design_num)
+        logging.debug(f"Received byte {byte_out:08b} from design {design_num}")
         b |= 1
     
+    logging.info(f"Sending byte {b:08b} to design {design_num}")
     byte_out = tt.send_receive_byte(b, design_num)
-    print(byte_out)
     byte_out = "{:08b}".format(byte_out)
+    logging.info(f"Received byte {byte_out} from design {design_num}")
 
     return await render_template("index.html", design_num=str(design_num), byte_in=original_byte_in, byte_out=byte_out, clock="checked" if clock else "")
 

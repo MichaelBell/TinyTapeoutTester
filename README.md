@@ -2,20 +2,45 @@
 
 Test your Tiny Tapeout design interactively by wiring it up to a Pico W running Micropython.
 
-TODO: Full instructions
+## Setup
+
+The pins used to communicate with the Tiny Tapeout are specified in `tt.py`, by default they are:
+
+| Inputs to TT | Outputs from TT |
+| ------------ | --------------- |
+| Clock: 12    | Clock: 9 |
+| Data: 13     | Data: 8 |
+| Latch En: 11 | |
+| Scan Sel: 10 | |
+
+The length of the scan chain is also specified in `tt.py`, you will need to set that correctly for your test environment or the Tiny Tapeout chip you are testing against.
+
+Load the files on to a Pico W running Micropython and create a `secrets.py` specifying:
+    wlan_ssid = "Your SSID"
+    wlan_password = "Your password"
+
+Upload all the files in the repo to your Pico W, and then launch `tt_main.py`.  When it connects it will log the IP address.  Open that in a web browser.
+For example, if the IP address is 192.168.0.153 go to http://192.168.0.153/
+
+## Usage
+
+Select the number of the design you wish to interact with.  Input the byte you want to send to the design in binary and click Send.
+
+The byte will be sent down the scan chain to the selected design and latched in.  Then the output fom your design is scanned, and shifted out.
+
+The resulting byte of output is displayed in binary.
+
+Many Tiny Tapeout designs are clocked using input 0.  To aid with sending data to these designs you can tick the Clock setting.  When ticked, each time you hit send two bytes will be sent to the selected design.
+
+The first byte is sent with bit 0 set to 0, and the second with bit 0 set to 1.  This means the design sees stable inputs over a rising edge of the clock, allowing it to read the remaining inputs.  
+The design output from after the second byte was latched in is displayed.
 
 ## Licensing and attributions
 
 Except as otherwise noted, code is Copyright (c) 2023 Michael Bell and licensed under the Apache License v2.0.
 
-The Tiny Tapeout logo is included with kind permission from Matt Venn.
+The Tiny Tapeout logo belongs to the Tiny Tapeout project and is included with permission from Matt Venn.
 
-The CSS was inspired by [this example](https://codepen.io/ainalem/pen/GRqPwoz).
+The web framework phew is from Pimoroni.
 
-Copyright (c) 2023 by Mikael Ainalem (https://codepen.io/ainalem/pen/GRqPwoz)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+The CSS was inspired by [this example](https://codepen.io/ainalem/pen/GRqPwoz), Copyright (c) 2023 by Mikael Ainalem and used under the MIT license.
