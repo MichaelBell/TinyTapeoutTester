@@ -4,90 +4,24 @@ import random
 from machine import Pin
 import hova_asm
 
-from tt_pio import TT_PIO
-from tt_hova import TT_Hova
-
-# Pin mapping - names from FPGA's point of view
-clk = Pin(12, Pin.OUT)
-data_in = Pin(13, Pin.OUT)
-latch_en = Pin(11, Pin.OUT)
-scan_select = Pin(10, Pin.OUT)
-
-clk_out = Pin(9, Pin.IN)
-data_out = Pin(8, Pin.IN)
+#from tt_pio import TT_PIO
+from tt_hova_fifo import TT_Hova
+import tt_driver
 
 seg_latch = Pin(7, Pin.OUT)
-
-clk.off()
-data_in.off()
-latch_en.off()
-scan_select.off()
 seg_latch.off()
 
 chain_len = 34
 
-# Test pattern
-if False:
-    for i in range(256+chain_len+1):
-        # Send i % 256
-        d = i & 0xFF
-        d_out = 0
-        
-        # Data goes MSB first
-        for j in range(8):
-            data_in.value(d >> 7)
-            d_out = (d_out << 1) | data_out.value()
-            d = (d & 0x7F) << 1
-            clk.on()
-            clk.off()
-
-        print(i, d_out)
-        time.sleep(0.01)
-
-tt = TT_PIO(0, data_in, data_out, scan_select)
-
-@micropython.native
 def send_byte(d, read=False, latch=False, scan=False):
-    return tt.send_byte_blocking(d, latch, scan)
+    return tt_driver.send_byte(d, latch=latch, scan=scan)
     
-@micropython.native
 def send_bytes(d, read=False, latch=False, scan=False):
-    return tt.send_bytes_blocking(d, latch, scan)
+    return tt_driver.send_bytes(d, read=read, latch=latch, scan=scan)
     
-@micropython.native
 def send_zeroes(num, read=False, latch=False, scan=False):
-    return tt.send_zeroes_blocking(num, latch, scan)
+    return tt_driver.send_byte_repeat(0, num, read=read, latch=latch, scan=scan)
     
-def old_send_byte(d, read=False, latch=False, scan=False):
-    d_out = 0
-    
-    if scan:
-        scan_select.on()
-        clk.on()
-        clk.off()
-        scan_select.off()
-        #time.sleep(1)
-    
-    # Data goes MSB first
-    for j in range(8):
-        data_in.value(d >> 7)
-        d_out = (d_out << 1) | data_out.value()
-        d = (d & 0x7F) << 1
-        if j == 7 and latch:
-            latch_en.on()
-        clk.on()
-        clk.off()
-
-    #if latch:
-    #    time.sleep(1)
-    latch_en.off()
-
-    return d_out
-
-@micropython.native
-def clock_byte(d):
-    tt.send_bytes_blocking(((d & 0xFE), (d | 1)))
-
 # Test invert
 if True:
     for i in range(chain_len):
@@ -103,7 +37,7 @@ if True:
     print("{:02x} (expected 55)".format(send_zeroes(chain_len-1, read=True, scan=True)))
 
 # Test Hovalaag
-hova = TT_Hova(tt, seg_latch)
+hova = TT_Hova(seg_latch)
 
 #NOP
 hova.execute_instr(0)
@@ -113,8 +47,8 @@ hova.execute_instr(0)
 # Repeatedly add one to A
 if False:
     for i in range(50):
-        #               ALU- A- B- C- D W- F- PC O I X K----- L-----
-        hova.execute_instr(0b0101_01_11_00_0_01_00_01_1_0_0_000001_000000) # A=A+B,B=1,W=A+B,OUT1=W,JMP 0
+        #                    ALU- A- B- C- D W- F- PC O I X K----- L-----
+        hova.execute_instr(0b0101_01_11_00_0_01_00_00_1_0_0_000001_000000) # A=A+B,B=1,W=A+B,OUT1=W,JMP 0
         time.sleep(0.1)
     
 # Example loop 1:
@@ -242,7 +176,11 @@ tprog = hova_asm.assemble(aoc2020_1_1_asm)
 
 print("Running AOC 2020 1_1")
 in1 = [
-        2000, 50, 1984, 1648, 32, 1612, 1992, 1671, 1955, 1658, 1592, 1596, 1888, 1540, 239, 1677, 1602, 1877, 1481, 2004, 1985, 1829, 1980, 1500, 1120, 1849, 1941, 1403, 1515, 1915, 1862, 2002, 1952, 1893, 1494, 1610, 1432, 1547, 1488, 1642, 1982, 1666, 1856, 1889, 1691, 1976, 1962, 2005, 1611, 1665, 1816, 1880, 1896, 1552, 1809, 1844, 1553, 1841, 1785, 1968, 1491, 1498, 1995, 1748, 1533, 1988, 2001, 1917, 0
+#        2000, 50, 1984, 1648, 32, 1612, 1992, 1671, 1955, 1658, 1592, 1596, 1888, 1540, 239, 1677, 1602, 1877, 1481, 2004, 1985, 1829, 1980, 1500, 1120, 1849, 1941, 1403, 1515, 1915, 1862, 2002, 1952, 1893, 1494, 1610, 1432, 1547, 1488, 1642, 1982, 1666, 1856, 1889, 1691, 1976, 1962, 2005, 1611, 1665, 1816, 1880, 1896, 1552, 1809, 1844, 1553, 1841, 1785, 1968, 1491, 1498, 1995, 1748, 1533, 1988, 2001, 1917, 0
+        2000,   50, 1984, 1648,   32, 1612, 1992, 1671, 1955, 1658,
+        1592, 1596, 1888, 1540,  239, 1677, 1602, 1877, 1481, 2004,
+        1849, 1941, 1403, 1515, 1915, 1862, 2002, 1995, 1748, 1533,
+        1988, 2001, 1917, 0
     ]
 
 start = time.ticks_ms()

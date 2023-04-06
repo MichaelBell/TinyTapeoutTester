@@ -1,156 +1,152 @@
 import time
+import tt_driver
 
 design_num = 9
 fifo_design_num = 28
 chain_len = 34
 
 class TT_Hova:
-    def __init__(self, tt_pio, pin_seg_latch):
-        self.tt = tt_pio
+    def __init__(self, pin_seg_latch):
         self.seg_latch = pin_seg_latch
         self.reset()
     
     @micropython.native
     def clock_byte(self, d):
-        self.tt.send_bytes_blocking(((d & 0xFE), (d | 1)))
+        tt_driver.send_bytes(((d & 0xFE), (d | 1)))
         
     @micropython.native
     def clock_hbyte(self, d, scan=False):
-        self.tt.send_bytes_blocking(((((d & 0x3F) << 2) | 2), (((d & 0x3F) << 2) | 3)), scan=scan)
+        tt_driver.send_bytes(((((d & 0x3F) << 2) | 2), (((d & 0x3F) << 2) | 3)), scan=scan)
         
     @micropython.native
     def send_instr(self, instr):
-        self.tt.send_zeroes_blocking(fifo_design_num - design_num)
+        tt_driver.send_byte_repeat(0, fifo_design_num - design_num)
         d = []
         for i in range(4):
             d.append(((instr & 0x3F) << 2) | 2)
             d.append(((instr & 0x3F) << 2) | 3)
             instr >>= 6
         d.append(((instr & 0x3F) << 2) | 2)
-        self.tt.send_bytes_blocking(d)
+        tt_driver.send_bytes(d)
         d.clear()
         d.append(((instr & 0x3F) << 2) | 3)
         instr >>= 6
         d.append(((instr & 0x3F) << 2) | 2)
         d.append(((instr & 0x3F) << 2) | 3)
         d.extend((0,)*9)
-        self.tt.send_bytes_blocking(d, latch=True)
+        tt_driver.send_bytes(d, latch=True)
 
     def reset(self):    
         # Reset FIFO: 3 clocks of 8b0000_000C
         for i in range(3):
             self.clock_byte(0)
-        self.tt.send_zeroes_blocking(fifo_design_num - design_num - 6)
+        tt_driver.send_byte_repeat(0, fifo_design_num - design_num - 6)
 
         # Reset Hovalaag: 3 clocks of 8b0000_010C
         for i in range(3):
             self.clock_byte(0b0000_0100)
-        self.tt.send_zeroes_blocking(design_num - 6)
-        self.tt.send_zeroes_blocking(6, latch=True)
+        tt_driver.send_byte_repeat(0, design_num - 6)
+        tt_driver.send_byte_repeat(0, 6, latch=True)
 
     def execute_instr(self, instr, in1=[], latch_seg=True):
         self.send_instr(instr)
-        status = self.tt.send_zeroes_blocking(chain_len - design_num, scan=True)
+        status = tt_driver.send_byte_repeat(0, chain_len - design_num, scan=True, read=True)
 
         if (status & 0x1) != 0 and len(in1) > 0:
             in1.pop(0)
         in2_pop = (status & 0x2) != 0
         
-        # Read in2 from FIFO
+        in1_val = 0
+        if len(in1) > 0: in1_val = in1[0]
+        out = 0
+
+        # Read in2 from FIFO and new PC, send in1
         if in2_pop:
             self.clock_byte(0b0010_1100)
         else:
             self.clock_byte(0b0000_0100)
-        self.tt.send_zeroes_blocking(fifo_design_num - 2)
-        self.tt.send_zeroes_blocking(2, latch=True)
-        in2_low = self.tt.send_zeroes_blocking(chain_len - fifo_design_num, scan=True) >> 2
+        tt_driver.send_byte_repeat(0, fifo_design_num - design_num - 2)
+        self.clock_hbyte(in1_val)
+        tt_driver.send_byte_repeat(0, design_num - 2)
+        tt_driver.send_byte_repeat(0, 2, latch=True)
+        in2_low = tt_driver.send_byte_repeat(0, chain_len - fifo_design_num, scan=True, read=True) >> 2
+        pc = tt_driver.send_byte_repeat(0, fifo_design_num - design_num, read=True)
 
         if in2_pop:
             self.clock_byte(0b0010_1100)
         else:
             self.clock_byte(0b0001_0100)
-        self.tt.send_zeroes_blocking(fifo_design_num - 2)
-        self.tt.send_zeroes_blocking(2, latch=True)
-        in2_high = self.tt.send_zeroes_blocking(chain_len - fifo_design_num, scan=True) >> 2
+        if (status & 0x8) != 0:
+            tt_driver.send_byte_repeat(0, fifo_design_num - 2)
+            tt_driver.send_byte_repeat(0, 2, latch=True)
+            in2_high = tt_driver.send_byte_repeat(0, chain_len - fifo_design_num, scan=True, read=True) >> 2
+            tt_driver.send_byte_repeat(0, 2*fifo_design_num - design_num - chain_len)
+        else:
+            tt_driver.send_byte_repeat(0, fifo_design_num - design_num - 2)
+            self.clock_hbyte(in1_val >> 6)
+            tt_driver.send_byte_repeat(0, design_num - 2)
+            tt_driver.send_byte_repeat(0, 2, latch=True)
+            in2_high = tt_driver.send_byte_repeat(0, chain_len - fifo_design_num, scan=True, read=True) >> 2
+            out = tt_driver.send_byte_repeat(0, fifo_design_num - design_num, read=((status & 0x4) != 0)) >> 2
         
-        in1_val = 0
-        if len(in1) > 0: in1_val = in1[0]
-        out = 0
-
-        # Read new PC
-        self.tt.send_zeroes_blocking(fifo_design_num - design_num)
-        self.clock_hbyte(in1_val)
-        self.tt.send_zeroes_blocking(design_num - 2)
-        self.tt.send_zeroes_blocking(2, latch=True)
         if (status & 0xC) == 0:
             # Complete hovalaag cycle
-            pc = self.tt.send_zeroes_blocking(chain_len - design_num, scan=True)
-
-            self.clock_hbyte(in1_val >> 6)
             self.clock_hbyte(in2_low)
             self.clock_hbyte(in2_high)
-            self.tt.send_zeroes_blocking(design_num - 6)
-            self.tt.send_zeroes_blocking(6, latch=True)
+            tt_driver.send_byte_repeat(0, design_num - 4)
+            tt_driver.send_byte_repeat(0, 4, latch=True)
         elif (status & 0x8) != 0:
-            pc = self.tt.send_zeroes_blocking(chain_len - design_num, scan=True)
-
             data_for_hova = ((in1_val >> 4) & 0xFC) | 2
-            self.tt.send_byte_blocking(data_for_hova)
-            self.tt.send_zeroes_blocking(design_num - 1)
-            self.tt.send_byte_blocking(0, latch=True)
-            self.tt.send_bytes_blocking((data_for_hova,) * (fifo_design_num - design_num - 1), scan=True)
-            self.tt.send_byte_blocking(0, latch=True)
+            tt_driver.send_byte(data_for_hova)
+            tt_driver.send_byte_repeat(0, design_num - 1)
+            tt_driver.send_byte(0, latch=True)
+            tt_driver.send_byte_repeat(data_for_hova, fifo_design_num - design_num - 1, scan=True)
+            tt_driver.send_byte(0, latch=True)
 
-            self.tt.send_zeroes_blocking(fifo_design_num - design_num)
+            tt_driver.send_byte_repeat(0, fifo_design_num - design_num)
             data_for_hova = ((in1_val >> 4) & 0xFC) | 3
-            self.tt.send_byte_blocking(data_for_hova)
-            self.tt.send_zeroes_blocking(design_num - 1)
-            self.tt.send_byte_blocking(0, latch=True)
-            self.tt.send_bytes_blocking((data_for_hova,) * (fifo_design_num - design_num - 1), scan=True)
-            self.tt.send_byte_blocking(0, latch=True)
+            tt_driver.send_byte(data_for_hova)
+            tt_driver.send_byte_repeat(0, design_num - 1)
+            tt_driver.send_byte(0, latch=True)
+            tt_driver.send_byte_repeat(data_for_hova, fifo_design_num - design_num - 1, scan=True)
+            tt_driver.send_byte(0, latch=True)
             
-            self.tt.send_zeroes_blocking(fifo_design_num - design_num)
+            tt_driver.send_byte_repeat(0, fifo_design_num - design_num)
             data_for_hova = (in2_low << 2) | 2
-            self.tt.send_byte_blocking(data_for_hova)
-            self.tt.send_zeroes_blocking(design_num - 1)
-            self.tt.send_byte_blocking(0, latch=True)
-            self.tt.send_bytes_blocking((data_for_hova,) * (fifo_design_num - design_num - 1), scan=True)
-            self.tt.send_byte_blocking(0, latch=True)
+            tt_driver.send_byte(data_for_hova)
+            tt_driver.send_byte_repeat(0, design_num - 1)
+            tt_driver.send_byte(0, latch=True)
+            tt_driver.send_byte_repeat(data_for_hova, fifo_design_num - design_num - 1, scan=True)
+            tt_driver.send_byte(0, latch=True)
 
-            self.tt.send_zeroes_blocking(fifo_design_num - design_num)
+            tt_driver.send_byte_repeat(0, fifo_design_num - design_num)
             data_for_hova = (in2_low << 2) | 3
-            self.tt.send_byte_blocking(data_for_hova)
-            self.tt.send_zeroes_blocking(design_num - 1)
-            self.tt.send_byte_blocking(0, latch=True)
-            self.tt.send_bytes_blocking((data_for_hova,) * (fifo_design_num - design_num - 2), scan=True)
-            self.tt.send_byte_blocking(0)
-            self.tt.send_byte_blocking(0, latch=True)
+            tt_driver.send_byte(data_for_hova)
+            tt_driver.send_byte_repeat(0, design_num - 1)
+            tt_driver.send_byte(0, latch=True)
+            tt_driver.send_byte_repeat(data_for_hova, fifo_design_num - design_num - 2, scan=True)
+            tt_driver.send_byte(0)
+            tt_driver.send_byte(0, latch=True)
             
             self.clock_hbyte(in2_high)
-            self.tt.send_zeroes_blocking(design_num - 2)
-            self.tt.send_zeroes_blocking(2, latch=True)
+            tt_driver.send_byte_repeat(0, design_num - 2)
+            tt_driver.send_byte_repeat(0, 2, latch=True)
 
         else:
-            pc = self.tt.send_zeroes_blocking(chain_len - design_num, scan=True)
-            
-            self.clock_hbyte(in1_val >> 6)
-            self.tt.send_zeroes_blocking(design_num - 2)
-            self.tt.send_zeroes_blocking(2, latch=True)
-            out = self.tt.send_zeroes_blocking(chain_len - design_num, scan=True) >> 2
-            
             self.clock_hbyte(in2_low)
-            self.tt.send_zeroes_blocking(design_num - 2)
-            self.tt.send_zeroes_blocking(2, latch=True)
-            out = ((self.tt.send_zeroes_blocking(chain_len - design_num, scan=True) & 0xFC) << 4) | out
+            tt_driver.send_byte_repeat(0, design_num - 2)
+            tt_driver.send_byte_repeat(0, 2, latch=True)
+            out = ((tt_driver.send_byte_repeat(0, chain_len - design_num, scan=True, read=True) & 0xFC) << 4) | out
             out = (out ^ 0x800) - 0x800 # Sign extend
             
             self.clock_hbyte(in2_high)
-            self.tt.send_zeroes_blocking(design_num - 2)
-            self.tt.send_zeroes_blocking(2, latch=True)
+            tt_driver.send_byte_repeat(0, design_num - 2)
+            tt_driver.send_byte_repeat(0, 2, latch=True)
+            #print("OUT={}".format(out))
         #print("PC={:02x}".format(pc))
         
         if latch_seg:
-            self.tt.send_zeroes_blocking(chain_len - design_num, scan=True)
+            tt_driver.send_byte_repeat(0, chain_len - design_num, scan=True)
             self.seg_latch.on()
             time.sleep(0.00001)
             self.seg_latch.off()
